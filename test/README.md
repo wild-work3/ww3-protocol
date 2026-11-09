@@ -59,3 +59,12 @@ py protocol/test/python/run.py
   不参与执行。接入时需新增一类「单帧能力」断言：invoke 与 result 成对、`ok=false` 必带 `error.kind`、
   结果体过 `result.<method>.json` schema。
 - 样例目录尚未覆盖：`incomplete`、latch 中途空串、无 index 的 tool 合并、每类错误 kind。
+## 负样例约定
+
+文件名含 **`.err`** 的样例是「故意违背契约」的负样例（如
+`chat.generate.err_multiple_terminals.jsonl` 含两个终止事件）。跑器对它们**期望断言失败**：
+
+- 断言失败 → 记 PASS（说明校验器真的能抓到这条契约违背）
+- 断言通过 → 记 FAIL（说明校验器漏检了，比「样例错」严重）
+
+这样 CI 可以把本跑器当门禁用，而不会因为一份刻意写坏的样例永远红着。

@@ -228,17 +228,26 @@ def main():
 
     passed = failed = 0
     for file_name in sorted(samples):
+        # 负样例约定：文件名含 ".err" 表示「故意违背契约，断言理应失败」。
+        # 否则这份样例永远红着，CI 就没法当门禁用。
+        expect_fail = ".err" in file_name
         ok, fail, terminal_count = run_sample(file_name, registry)
-        print("\n== %s ==" % file_name)
+        # 负样例：断言必须真的失败，否则说明校验器漏检了这条契约
+        sample_ok = (len(fail) > 0) if expect_fail else (len(fail) == 0)
+
+        print("\n== %s ==%s" % (file_name, "  (负样例，期望违背契约)" if expect_fail else ""))
         for line in ok:
             print("  [OK]    " + line)
         for line in fail:
             print("  [FAIL]  " + line)
+        if expect_fail:
+            print("  [OK]    负样例按预期被拒绝" if sample_ok
+                  else "  [FAIL]  负样例未被拒绝：校验器漏检了这条契约")
         print("  终止事件计数: %d" % terminal_count)
-        if fail:
-            failed += 1
-        else:
+        if sample_ok:
             passed += 1
+        else:
+            failed += 1
 
     status = "PASS" if failed == 0 else "FAIL"
     print("\n%s: 通过 %d 个样例，失败 %d 个样例" % (status, passed, failed))

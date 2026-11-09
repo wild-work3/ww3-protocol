@@ -241,13 +241,22 @@ function main() {
   let passed = 0;
   let failed = 0;
   for (const file of samples) {
+    // 负样例约定：文件名含 ".err" 表示「故意违背契约，断言理应失败」。
+    // 否则这份样例永远红着，CI 就没法当门禁用（真实存在的 bug，2026-11-09 修）。
+    const expectFail = file.includes(".err");
     const { ok, fail, terminalCount } = runSample(file, registry);
-    console.log(`\n== ${file} ==`);
+    // 负样例：断言必须真的失败，否则说明校验器漏检了这条契约
+    const sampleOk = expectFail ? fail.length > 0 : fail.length === 0;
+
+    console.log(`\n== ${file} ==${expectFail ? "  (负样例，期望违背契约)" : ""}`);
     for (const line of ok) console.log("  [OK]    " + line);
     for (const line of fail) console.log("  [FAIL]  " + line);
+    if (expectFail) {
+      console.log(sampleOk ? "  [OK]    负样例按预期被拒绝" : "  [FAIL]  负样例未被拒绝：校验器漏检了这条契约");
+    }
     console.log(`  终止事件计数: ${terminalCount}`);
-    if (fail.length) failed++;
-    else passed++;
+    if (sampleOk) passed++;
+    else failed++;
   }
 
   console.log(`\n${failed === 0 ? "PASS" : "FAIL"}: 通过 ${passed} 个样例，失败 ${failed} 个样例`);
