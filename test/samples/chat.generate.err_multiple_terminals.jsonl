@@ -1,0 +1,4 @@
+{"v":1,"id":"req-err","op":"event","event":"text.delta","content":""}
+{"v":1,"id":"req-err","op":"event","event":"text.delta","content":""}
+{"v":1,"id":"req-err","op":"event","event":"error","error":{"kind":"hard_credit","scope":"account","message":"余额不足","retryable":true}}
+{"v":1,"id":"req-err","op":"event","event":"completed","request_id":"req-err","finish_reason":"stop"}

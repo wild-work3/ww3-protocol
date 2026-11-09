@@ -1,0 +1,67 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/wild-work3/protocol/schema/params.systemone.decide.json",
+  "title": "systemone.decide 参数体（invoke.params）",
+  "description": "可选业务能力：结构化决策（OpenCode Zen Jev jev-1.13-free）。非流式、一调用一进程、只回一帧 result。\n权威散文契约：protocol/docs/PLUGIN_PROTOCOL.md §5.8.1（字段/校验分界/预算）、§5.8 共同约定；决议 W3-30。\n能力可选：manifest capabilities.control 未声明时 core 不得调用；被调到时插件回 kind=not_supported / scope=channel。\n上游事实：POST {base}/systemone（base 车道与 chat 相同），凭据由插件自读 <data>/auths/，绝不经 IPC（W3-07）。",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["state", "questions"],
+  "properties": {
+    "state": {
+      "type": "string",
+      "description": "必填（键必须存在），判定上下文。无上下文写空串——上游要求该键存在，缺键直接 400（旧版 gateway.go:246 实证）。与 questions 共享约 32k token 预算。"
+    },
+    "questions": {
+      "type": "object",
+      "minProperties": 1,
+      "description": "非空问题字典：键=调用方自定义的问题标识，值=问题定义。所有问题共享同一 state，一次请求全部返回。",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["type", "criteria"],
+        "additionalProperties": true,
+        "properties": {
+          "type": {
+            "enum": ["noul", "choice", "score"],
+            "description": "noul=二元判定（概率）；choice=多分类选一；score=多级评分。"
+          },
+          "criteria": {
+            "description": "形状随 type 变（本 schema 用 oneOf 约束）：noul 恰好 {true,false} 两键；choice 为非空对象（≤255 项）；score 为 2~10 项的等级描述数组。",
+            "oneOf": [
+              {
+                "type": "object",
+                "required": ["true", "false"],
+                "additionalProperties": false,
+                "description": "noul：恰好两个键，值为该侧含义的描述文本。"
+              },
+              {
+                "type": "object",
+                "minProperties": 1,
+                "maxProperties": 255,
+                "description": "choice：选项键 → 该选项判据描述。上限 255 项（旧版 README 实测）。"
+              },
+              {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 10,
+                "items": { "type": "string" },
+                "description": "score：2~10 级，按下标升序给出各等级含义描述。"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "model": {
+      "type": "string",
+      "description": "决策模型，缺省 jev-1.13-free。未知模型由插件本地拒绝（kind=model_blocked, scope=model），CLI/core 不校验。不能走 /v1/chat/completions（上游会 500）。"
+    },
+    "uid": {
+      "type": "string",
+      "description": "可选账号标识（= core 的 RemoteUID，同 auths/ 文件名）。省略时插件按自身账号策略选号；匿名渠道（oczen）本就无凭据。"
+    },
+    "config": {
+      "type": "object",
+      "description": "渠道配置（base_url/proxy/timeout 等），**不含凭据**（W3-07）。控制面惯例：与 §5.2.1 一致，不是会话面的 channel_config（AGENTS 陷阱 20）。"
+    }
+  }
+}

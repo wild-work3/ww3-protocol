@@ -1,0 +1,47 @@
+name: ci
+
+# 契约仓 CI 只做「这份契约自洽」的检查：
+#   1. Go SDK / 参考实现能编译、vet 干净、单测通过
+#   2. 跨语言契约测试（Node / Python 各自独立实现 framing 去读 samples/）
+# 不在这里跑任何插件——插件准入门禁不属本仓（W3-53 交付边界）。
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: build
+        run: go build ./...
+      - name: vet
+        run: go vet ./...
+      - name: test
+        run: go test ./...
+      - name: 模块可被外部 import（module path 含点 + 零依赖）
+        run: |
+          out=$(go list -m all)
+          echo "$out"
+          # 首行是自身 module；零第三方依赖意味着只有一行
+          [ "$(echo "$out" | wc -l)" = "1" ] || { echo "::error::出现了第三方依赖，契约仓应保持零依赖"; exit 1; }
+
+  crosslang:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Node 契约断言
+        run: node test/node/run.js
+      - name: Python 契约断言
+        run: python test/python/run.py

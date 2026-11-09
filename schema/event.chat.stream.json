@@ -1,0 +1,132 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/wild-work3/protocol/schema/event.chat.stream.json",
+  "title": "chat.generate 事件序列（event 流）",
+  "description": "chat.generate 调用过程中逐条输出的事件 schema（每行 = 独立 JSON，JSONL）。\n参考契约：protocol/docs/IPC_CHAT.md §3（事件序列）、§3.1（正文 latch）、§3.2（工具调用合并）、§4（错误）、§5（用量）。\ngateway/core/拦截器/渠道 worker 全链路复用同一套契约（W3-13 #6/#8）。\n用法：对每个事件对象，要求其满足本 schema 的 oneOf 中某一分支（按 event 字段区分）。\n本 schema 的 oneOf 严格对应 IPC_CHAT §3 的事件表。async.complete（同步穿行辅助帧，见 PLUGIN_PROTOCOL.md）不在对话事件序列表内，属预留。\n终止事件 completed/incomplete/error 的唯一性、正文 latch、tool_call index 合并等跨事件序列不变量由契约测试骨架（protocol/test/）断言，不在单事件 schema 内表达。",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["v", "id", "op", "event"],
+  "properties": {
+    "v": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "协议版本号（与请求 invoke 同版本，版本协商见 PLUGIN_PROTOCOL.md / W3-12）。当前为 1。"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "请求唯一 ID，与该次 chat.generate 请求 invoke 的 id 相同，用于关联（IPC_CHAT §1：事件携带与请求相同的 id 关联）。"
+    },
+    "op": {
+      "const": "event",
+      "description": "操作类型：增量事件流，事件行固定 op=event（IPC_CHAT §3）。"
+    }
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["event"],
+      "properties": {
+        "event": { "const": "text.delta" },
+        "content": { "type": "string" },
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "可选：多内容分片的归属下标（如多段正文时）。正文增量 scene 常为默认单流，index 可省略（IPC_CHAT §3 text.delta 未要求 index）。"
+        }
+      },
+      "description": "正文增量事件（IPC_CHAT §3 text.delta）：content 为字符串增量；空串不置位 latch（§3.1），角色-only 首帧空 content 是常态，必须合法。"
+    },
+    {
+      "type": "object",
+      "required": ["event"],
+      "properties": {
+        "event": { "const": "reasoning.delta" },
+        "content": { "type": "string" }
+      },
+      "description": "推理/思考增量事件（IPC_CHAT §3 reasoning.delta）：可选，凡上游给 reasoning 才发；content 为思考增量字符串。"
+    },
+    {
+      "type": "object",
+      "required": ["event"],
+      "properties": {
+        "event": { "const": "tool_call.delta" },
+        "index": { "type": "integer", "minimum": 0 },
+        "id": {
+          "type": "string",
+          "description": "工具调用 id：首片必带；后续并入 arguments 时可不带（IPC_CHAT §3.2：首片带 id/type/name，后续只带 arguments 片段）。"
+        },
+        "type": {
+          "type": "string",
+          "description": "工具类型（如 function）：首片可带（IPC_CHAT §3.2）。"
+        },
+        "name": {
+          "type": "string",
+          "description": "工具名：首片可带（IPC_CHAT §3.2）。"
+        },
+        "arguments_fragment": {
+          "type": "string",
+          "description": "工具参数增量片段，可跨多帧累积（IPC_CHAT §3.2 / §8 样例）。后续帧可能只带 arguments_fragment，index 对应合并目标。"
+        }
+      },
+      "description": "工具调用增量事件（IPC_CHAT §3 tool_call.delta / §3.2）：按 index 累积合并到局部表；index 缺失时按顺序推入新条目。"
+    },
+    {
+      "type": "object",
+      "required": ["event"],
+      "properties": {
+        "event": { "const": "finish_reason" },
+        "reason": {
+          "type": "string",
+          "enum": ["stop", "length", "tool_calls", "content_filter"],
+          "description": "结束原因（IPC_CHAT §3 finish_reason）：stop/length/tool_calls/content_filter…；截断不得补 [DONE] 伪装正常收尾（R36 / IPC_CHAT §3）。"
+        }
+      },
+      "description": "结束原因事件（IPC_CHAT §3 finish_reason）：可与 completed 都出现一次，completed 为主终止事件；reason 枚举可扩展（其余值经版本协商）。"
+    },
+    {
+      "type": "object",
+      "required": ["event"],
+      "properties": {
+        "event": { "const": "usage" },
+        "usage": { "$ref": "event.utils.json#/$defs/iUsage" }
+      },
+      "description": "用量事件（IPC_CHAT §5）：可多帧、末帧为准或逐帧更新；结构引用 iUsage（null=未提供≠0）。"
+    },
+    {
+      "type": "object",
+      "required": ["event"],
+      "properties": {
+        "event": { "const": "error" },
+        "error": { "$ref": "event.utils.json#/$defs/iError" }
+      },
+      "description": "错误终止事件（IPC_CHAT §4）：引用 iError；任何阶段喷出的错误都作为唯一终止事件 error 发出（且只能一次）。"
+    },
+    {
+      "type": "object",
+      "required": ["event"],
+      "properties": {
+        "event": { "const": "completed" },
+        "request_id": { "type": "string", "minLength": 1 },
+        "finish_reason": {
+          "type": "string",
+          "description": "正常结束原因（可选，通常与 finish_reason 事件一致）。"
+        }
+      },
+      "description": "正常终止事件（IPC_CHAT §3 completed）：与请求同 id 关联；一个请求只能以一个终止事件收尾。"
+    },
+    {
+      "type": "object",
+      "required": ["event"],
+      "properties": {
+        "event": { "const": "incomplete" },
+        "request_id": { "type": "string", "minLength": 1 },
+        "cause": {
+          "type": "string",
+          "description": "非错误中断原因（IPC_CHAT §3 incomplete）：被截断/取消/超时等；如 cancel/truncated/timeout。"
+        }
+      },
+      "description": "非错误中断终止事件（IPC_CHAT §3 incomplete）：被截断/取消/超时等非错误中断；只能出现一次。"
+    }
+  ]
+}

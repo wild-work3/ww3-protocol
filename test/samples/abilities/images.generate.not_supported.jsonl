@@ -1,0 +1,2 @@
+{"v":1,"id":"n1","op":"invoke","method":"images.generate","params":{"prompt":"一只戴帽子的柴犬","config":{}}}
+{"v":1,"id":"n1","op":"result","ok":false,"error":{"kind":"not_supported","scope":"channel","message":"oczen 渠道不支持生图（能力 images.generate 未声明）"}}

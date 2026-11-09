@@ -1,0 +1,120 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/wild-work3/protocol/schema/request.chat.generate.json",
+  "title": "chat.generate 请求体（invoke）",
+  "description": "归一化对话流式 IPC 中 chat.generate 的 invoke 请求体 schema。\n参考契约：protocol/docs/IPC_CHAT.md §2（请求：chat.generate）、§2.1（模型命名）、AGENTS.md §5/§7.1（结构参考 OpenAI Chat Completions，type chatRequest = map[string]any 的 map 透传私有字段设计）。\n核心原则：统一结构是最小超集，不拦截上游私有字段（IPC_CHAT §2）。",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["v", "id", "op", "method", "model", "messages"],
+  "properties": {
+    "v": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "协议版本号（版本协商，见 PLUGIN_PROTOCOL.md / W3-12）。当前对话契约版本为 1。"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "请求唯一 ID，调用方生成；幂等/取消关联键，后续所有事件携带同 id（IPC_CHAT §1、§2）。"
+    },
+    "op": {
+      "const": "invoke",
+      "description": "操作类型。chat.generate 的 stream 终结语义为 invoke（IPC_CHAT §2）。"
+    },
+    "method": {
+      "const": "chat.generate",
+      "description": "方法名，固定 chat.generate。"
+    },
+    "conversation_id": {
+      "type": "string",
+      "description": "多轮会话标识（W3-03）：不绑进程，仅作插件持久化 session 映射键（IPC_CHAT §2）。可选。"
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1,
+      "description": "客户端请求的原始模型名（PublicModelID，含 channel/ 前缀），由 core 显式下发，不靠渠道内部记忆（IPC_CHAT §2.1）。格式样例：\"workbuddy/deepseek-v3\"。"
+    },
+    "messages": {
+      "type": "array",
+      "minItems": 0,
+      "items": { "$ref": "#/definitions/message" },
+      "description": "OpenAI Chat 消息数组；tool 消息带 tool_call_id（IPC_CHAT §2）。"
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "description": "OpenAI 工具定义。注意：$ref 需在出站前内联消毒（W3-09 / IPC_CHAT §2）。",
+        "additionalProperties": true
+      },
+      "description": "OpenAI 工具定义列表，可选；工具定义中的 $ref 需在出站前内联消毒（见 W3-09、IPC_CHAT §2）。"
+    },
+    "tool_choice": {
+      "description": "工具选择策略：string（auto/none 等）或结构化对象（含 function/name）。可选（IPC_CHAT §2）。",
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": { "function": { "type": "object", "additionalProperties": true } }
+        }
+      ]
+    },
+    "stream": {
+      "type": "boolean",
+      "description": "恒 true：本项目对话面只走流式（W3-13 #9 / IPC_CHAT §2）。可选。"
+    },
+    "temperature": {
+      "type": "number",
+      "description": "采样参数透传（IPC_CHAT §2）：temperature。可选。"
+    },
+    "top_p": {
+      "type": "number",
+      "description": "采样参数透传（IPC_CHAT §2）：top_p。可选。"
+    },
+    "max_tokens": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "采样参数透传（IPC_CHAT §2）：max_tokens。可选。"
+    },
+    "reasoning_effort": {
+      "description": "私有透传字段：推理强度（沿旧版 chatRequest map 透传，IPC_CHAT §2）。拦截器只读不改结构。可选。值可为 string 或任意扩展值。"
+    },
+    "thinking": {
+      "description": "私有透传字段：思考链选项（沿旧版 chatRequest map 透传，IPC_CHAT §2），拦截器只读不改结构。可选。"
+    }
+  },
+  "definitions": {
+    "message": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "OpenAI Chat 消息（IPC_CHAT §2）：role/content 两类任意组合，tool 消息带 tool_call_id。保持宽松以透传各渠道细节。",
+      "required": ["role"],
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": ["system", "user", "assistant", "tool"],
+          "description": "消息角色。tool 消息在旧版 anthropic 适配中由 tool_result 拆分而来（dev/internal/gateway/anthropic.go convertAnthropicMessage :208-225）。"
+        },
+        "content": {
+          "description": "消息内容：可为字符串或含 type/text/image 的结构化数组（OpenAI 多模态形态）。可选。",
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "array",
+              "items": { "type": "object", "additionalProperties": true }
+            }
+          ]
+        },
+        "tool_call_id": {
+          "type": "string",
+          "description": "tool 消息引用上一次 tool_call.delta 的 id；仅 role=tool 时出现（IPC_CHAT §2）。"
+        },
+        "name": {
+          "type": "string",
+          "description": "消息可携带 name（可选）。"
+        }
+      }
+    }
+  }
+}

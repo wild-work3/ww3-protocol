@@ -1,0 +1,8 @@
+{"v":1,"id":"req-1","op":"event","event":"text.delta","content":"查看"}
+{"v":1,"id":"req-1","op":"event","event":"text.delta","content":"天气"}
+{"v":1,"id":"req-1","op":"event","event":"reasoning.delta","content":"用户需要查天气，应调用 get_weather"}
+{"v":1,"id":"req-1","op":"event","event":"tool_call.delta","index":0,"id":"call_1","type":"function","name":"get_weather","arguments_fragment":"{\"city\":\"上海\""}
+{"v":1,"id":"req-1","op":"event","event":"tool_call.delta","index":0,"arguments_fragment":"\"}"}
+{"v":1,"id":"req-1","op":"event","event":"finish_reason","reason":"tool_calls"}
+{"v":1,"id":"req-1","op":"event","event":"usage","usage":{"prompt_tokens":120,"completion_tokens":30,"total_tokens":150,"prompt_reported":true,"completion_reported":true,"total_reported":true,"cache":{"cached":80,"cached_reported":true},"time_ms":840,"first_token_ms":210}}
+{"v":1,"id":"req-1","op":"event","event":"completed","request_id":"req-1","finish_reason":"tool_calls"}

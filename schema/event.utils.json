@@ -1,0 +1,151 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/wild-work3/protocol/schema/event.utils.json",
+  "title": "事件序列复用定义（iError / iUsage）",
+  "description": "chat.generate 事件流中各事件复用的共享定义：统一错误结构 iError 与统一用量结构 iUsage。\n参考契约：protocol/docs/IPC_CHAT.md §4（错误）、§4.1（kind 全集）、§5（用量归一）。\n子 schema：request.chat.generate.json 的请求沿用；event.chat.stream.json 的事件在这里引用 $defs。",
+  "$defs": {
+    "iError": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "统一错误结构（IPC_CHAT §4）。任何阶段喷出的错误都作为唯一终止事件 error 发出。",
+      "required": [
+        "kind",
+        "scope",
+        "message"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "hard_credit",
+            "soft_rate",
+            "session_dead",
+            "not_found",
+            "server",
+            "client",
+            "content_blocked",
+            "prompt_too_long",
+            "image_invalid",
+            "bad_params",
+            "waf_block",
+            "account_fault",
+            "model_blocked",
+            "passthrough",
+            "queued"
+          ],
+          "description": "稳定错误码，沿用旧版 provider.ErrKind 全集（IPC_CHAT §4.1，dev/internal/provider/provider.go ErrKind :207-275）。不能凭空新增；如确有扩展需走版本协商。"
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "request",
+            "model",
+            "account",
+            "channel"
+          ],
+          "description": "错误作用域（IPC_CHAT §4）：core 据此决定处置——request/model 请求级、account/channel 账号/渠道级冷却换号降级。"
+        },
+        "message": {
+          "type": "string",
+          "description": "人类可读描述（IPC_CHAT §4）。"
+        },
+        "retryable": {
+          "type": "boolean",
+          "description": "是否可换号/换上游重试（IPC_CHAT §4）。可选；缺省即不存在（IPC_CHAT §1 可选字段约定）。"
+        },
+        "retry_after_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "上游建议重试间隔（如排队帧 Retry-After），毫秒；可空（IPC_CHAT §4）。"
+        },
+        "cause": {
+          "type": "string",
+          "description": "底层原因透传/压平截断原始原因（TruncationCause）等；扩展 kind（conn/auth/idle_timeout/cancel/truncated）与 IsIdleTimeout 形态识别归入此处（IPC_CHAT §4.1 末尾）。可选。"
+        }
+      }
+    },
+    "iUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "统一用量结构（IPC_CHAT §5）。**null = 上游未提供，不等于 0**；cached_reported/write_reported 布尔标记上游是否真的报告，防把未报当 0 命中。可多帧增量更新（每帧只带已获字段），末帧为准或逐帧更新——故不强制必需任一 token 字段。",
+      "properties": {
+        "prompt_tokens": {
+          "description": "上游报告的总 prompt 输入 token 数（IPC_CHAT §5）。未提供应为 null 而非 0。",
+          "type": "integer",
+          "minimum": 0
+        },
+        "completion_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "上游报告的 completion 输出 token 数（IPC_CHAT §5）。"
+        },
+        "total_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "totals = prompt + completion（可省略，通常由接收方计算）；未提供可为 null（IPC_CHAT §5）。"
+        },
+        "cache": {
+          "type": "object",
+          "description": "缓存计量（IPC_CHAT §5），借旧版 ExtractUsageCache 的多形态识别（dev/internal/provider/usage.go :158-205）。",
+          "properties": {
+            "cached": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "缓存命中 token 数（Anthropic 互斥缓存语义：input_tokens = prompt − cached − write）。null = 未报告。"
+            },
+            "cached_reported": {
+              "type": "boolean",
+              "description": "上游是否真的报告了缓存命中；false/缺省表示未报，勿把未报当 0 命中（IPC_CHAT §5）。"
+            },
+            "write": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "缓存写入/创建 token 数（cache_creation_input_tokens / cache_write_tokens）。null = 未报告。"
+            },
+            "write_reported": {
+              "type": "boolean",
+              "description": "上游是否真的报告了缓存写入；false/缺省表示未报（IPC_CHAT §5）。"
+            }
+          }
+        },
+        "time_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "整体耗时（毫秒），core 记录吞吐供降级与 Dashboard（IPC_CHAT §5）。可选。"
+        },
+        "first_token_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "首 token 延迟（毫秒）（IPC_CHAT §5）。可选。"
+        },
+        "prompt_reported": {
+          "type": "boolean",
+          "description": "prompt_tokens 是否由上游明确报告；显式 0 也为 true。"
+        },
+        "completion_reported": {
+          "type": "boolean",
+          "description": "completion_tokens 是否由上游明确报告；显式 0 也为 true。"
+        },
+        "total_reported": {
+          "type": "boolean",
+          "description": "total_tokens 是否由上游明确报告。"
+        },
+        "prompt_estimated": {
+          "type": "boolean",
+          "description": "prompt_tokens 是否由 core 粗估。与 prompt_reported 互斥。"
+        },
+        "completion_estimated": {
+          "type": "boolean",
+          "description": "completion_tokens 是否由 core 粗估。与 completion_reported 互斥。"
+        },
+        "total_estimated": {
+          "type": "boolean",
+          "description": "total_tokens 是否由 core 推导。与 total_reported 互斥。"
+        }
+      }
+    }
+  }
+}

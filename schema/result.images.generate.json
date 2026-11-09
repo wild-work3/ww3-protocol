@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/wild-work3/protocol/schema/result.images.generate.json",
+  "title": "images.generate 结果体（result.result）",
+  "description": "生图成功结果（invoke → 单帧 result，无事件流）。形状对齐 OpenAI Images（created/data[].url|b64_json|revised_prompt）并加 ww3 扩展字段。\n权威散文契约：protocol/docs/PLUGIN_PROTOCOL.md §5.8.2；决议 W3-30。\n红线：流截断且无产物 → 回 kind=truncated，**不得 ok:true、不得伪造产物、不得补 [DONE]**（W3-10/R36）。",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["created", "data"],
+  "properties": {
+    "created": {
+      "type": "integer",
+      "description": "产物生成时间，Unix 秒。也用作 CLI 落盘文件名前缀 <created>-<i>.<ext>。"
+    },
+    "data": {
+      "type": "array",
+      "minItems": 1,
+      "description": "产物列表，顺序即第 1..N 张。张数以本数组长度为准（请求 n 只是期望值）。",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "anyOf": [
+          { "required": ["b64_json"], "properties": { "b64_json": { "type": "string", "minLength": 1 } } },
+          { "required": ["url"], "properties": { "url": { "type": "string", "minLength": 1 } } }
+        ],
+        "properties": {
+          "url": { "type": "string", "description": "产物直链（response_format=url 时）。可能过期，调用方应尽快取回。" },
+          "b64_json": { "type": "string", "description": "产物 base64 正文（缺省形态，不带 data: 前缀）。" },
+          "revised_prompt": { "type": "string", "description": "上游改写后的提示词（glm 在 SSE 的 ct.Code）；无则省略该键。" },
+          "mime_type": { "type": "string", "description": "**实际** MIME（output_format 做不到时的真值来源）。" },
+          "width": { "type": "integer", "minimum": 1, "description": "**实际**宽度。改图时比例跟随输入图，不得回显请求值。" },
+          "height": { "type": "integer", "minimum": 1, "description": "**实际**高度。" }
+        }
+      }
+    },
+    "aspect_ratio": {
+      "type": "string",
+      "description": "实际生效比例（可选回显，供前端展示）。"
+    },
+    "note": {
+      "type": "string",
+      "description": "插件对参考图处理方式/降级合并的说明，如「3 张参考图已拼版为 1 张（reference1..3）」。做了合并/降级就**必须**填（不得静默丢弃，W3-30）。"
+    },
+    "usage": {
+      "type": ["object", "null"],
+      "description": "上游未上报 = null（**null ≠ 0**，PLUGIN_PROTOCOL §7）。不臆造。",
+      "additionalProperties": true
+    }
+  }
+}
