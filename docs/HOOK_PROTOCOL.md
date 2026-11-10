@@ -20,13 +20,16 @@
 
 ---
 
-## 2. 命名与形态（硬性）
+## 2. 命名与形态
 
-| 项 | 约定 |
+> **命名无固定定义，由开发者自己定**（用户 m00634/m00642）：项目名、仓库名、可执行文件名
+> **都不是契约**，身份只由 `manifest.json` 的 `id` 与 `kind` 决定。下表右列是**推荐**写法。
+
+| 项 | 说明（推荐值，非约束） |
 |---|---|
-| 项目/仓库名 | `xxx-hook`（github `ww3-xxx-hook`，本地 `xxx-hook`）；**不加 `-ext`** |
-| 可执行文件名 | `manifest.kind = "hook"` → `<id>-hook[.exe]`；渠道插件仍 `<id>-ext[.exe]` |
-| `manifest.kind` | `"hook"` |
+| 项目/仓库名 | 建议 `xxx-hook`（github `ww3-xxx-hook`，本地 `xxx-hook`），一眼看出是拦截器 |
+| 可执行文件名 | 建议 `<id>-hook[.exe]`（渠道插件 `<id>-ext[.exe]`）；实际叫什么都能被发现（core `resolveExe` 三级解析） |
+| `manifest.kind` | **`"hook"` —— 唯一真正的约束**（不是 hook 的插件不会被纳入链） |
 | `execution` | `{control: "call", conversation: "call"}` —— **一请求一进程**，不常驻 |
 | 调用 | core 每收到一次 `chat.generate`，按链序为每层 hook 各 spawn 一个进程（**与渠道 worker 并行启动**，见 §3.2） |
 | 数据目录 | `<core data>/plugins/<id>/`（W3-39：在 core 数据根之下，**不在安装树里**），下含 `auths/` `logs/` `stat/` |

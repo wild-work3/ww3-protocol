@@ -1,7 +1,10 @@
 # 渠道插件命令行契约（PLUGIN_CLI v1）
 
 > 权威文档。对应决议 **W3-21（CLI 形态）/ W3-22（插件数据目录与统计）/ W3-30（标准可选能力命令）**。
-> 适用对象：所有 `*-ext` 渠道插件；拦截器插件（`*-hook`，不带 `-ext`，W3-25）沿用同一外壳，命令集不同（多 `hook.stream` 会话面方法，见 `docs/HOOK_PROTOCOL.md`）。
+> 适用对象：所有渠道插件与拦截器插件。**目录/仓库/可执行文件的名字无固定定义，由开发者自己定**
+> （用户 m00634/m00642：不能假定插件后缀一定是 `-ext` / `-hook`）；本文与样例里用 `*-ext`（渠道）、
+> `*-hook`（拦截器，不带 `-ext`，W3-25）只是为了**一眼能看出分类**，属建议而非约束。
+> 真实身份以包内 `manifest.json` 的 `id` 为准。拦截器命令集不同（多 `hook.stream` 会话面方法，见 `docs/HOOK_PROTOCOL.md`）。
 > 相关文档：`PLUGIN_PROTOCOL.md`（RPC/IPC 契约）、`IPC_CHAT.md`（对话流式契约）、`AUTH_FLOW.md`（登录范式）。
 
 ---
@@ -214,8 +217,9 @@ Anthropic 的 `thinking:{type,budget_tokens}` 是对象、Gemini 的 `thinkingCo
 
 归属边界（W3-39）：
 - **一插件一根**，以插件 ID 为界。插件之间不得互读对方的 `<data>`（W3-07）；ID 由插件商店
-  登记保证唯一（默认由仓库名去掉 `ww3-` 前缀与 `-ext`/`-hook`/`-cli` 后缀派生，如 `ww3-workbuddy-ext` → `workbuddy`；
-  且必须等于包内 `manifest.json` 的 `id`，否则 `store.Install` 拒装，见 `PLUGIN_REGISTRY.md` §1.3）。
+  登记保证唯一（**以包内 `manifest.json` 的 `id` 为准**；老插件仓习惯用「仓库名去 `ww3-` 前缀与
+  `-ext`/`-hook`/`-cli` 后缀」派生，如 `ww3-workbuddy-ext` → `workbuddy`，但这只是命名建议，
+  不是派生契约：`ww3-chatgpt-cli` 的 id 是 `chatgpt`。不一致则 `store.Install` 拒装，见 `PLUGIN_REGISTRY.md` §1.3）。
 - **core / gateway 可直接读**这些目录（展示凭据、聚合统计、取日志），插件 ID 即归属前缀。
 - **数据文件的跨版本兼容性由插件自己保证**：`<data>` 里不掺版本号，升级换了 exe 仍读写同一批
   文件，所以新增字段要能容错读取、废弃字段要能忽略。
