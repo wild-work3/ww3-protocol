@@ -1,7 +1,7 @@
 # 拦截器插件契约（W3-25 / W3-26）
 
 > 对象：写拦截器（hook）插件的人，以及改 core hook 链的人。
-> 权威决议见 `AGENTS.md §2-E`（拦截器职责）、`§2-Y`（命名与形态）、`§2-Z`（数据根）。
+> 权威决议见 `AGENTS.md §2-E`（拦截器职责）、`§2-Y`（命名与形态）、`§2-Z`（数据根）、`§2-AF`（请求改写边界与调度字段）。
 > 本文只讲**协议**：怎么连、发什么帧、错了怎么办。
 
 ---
@@ -9,7 +9,8 @@
 ## 1. 一句话
 
 拦截器是插在 core 对话主链路上的一层，**看得到请求与流式响应，并能改写或终止它**。
-一个拦截器进程服务**一次对话请求**，走一条双向流 `hook.stream`：
+一个拦截器进程服务**一次对话请求**，走一条双向流 `hook.stream`；
+可选地额外声明 `request.prepare`（§4）以在渠道调用前改写/拒绝请求。
 
 ```
 下游客户端 ← gateway ← core ← H0 ← H1 ← … ← Hn ← 渠道插件 ← 上游
@@ -62,7 +63,7 @@
 
 | 字段 | 说明 |
 |---|---|
-| `request` | 本次对话请求。hook 可据此决策（例如只对某个 model 生效），**不应改写它**（改写请求是 `request.prepare` 类能力，另议） |
+| `request` | 本次对话请求（core 的调度字段已剔离，见 §4.2）。hook 可据此决策（例如只对某个 model 生效），**不应改写它**（改写请求走 §4 `request.prepare`） |
 | `config` | 该实例配置，字段由插件自定义（`config.schema` 声明） |
 | `hook_id` | 实例 ID，用于日志 |
 | `chain.index` | 0 = 链头（最靠近下游） |
@@ -150,7 +151,81 @@ core 收到 `ok=false` 后统一构造终止事件发给下游：
 
 ---
 
-## 4. 失败策略
+## 4. 可选能力：`request.prepare`（请求改写）
+
+拦截器除 `hook.stream` 外可额外声明 `capabilities.conversation = ["hook.stream", "request.prepare"]`，
+在**渠道调用之前**拿到一次改写请求的机会（注入管理区/工具定义/系统提示，或 fail-closed 拒绝请求）。
+未声明该能力的 hook 行为完全不变（向后兼容，如 `loopguard-hook`）。
+
+### 4.1 方法形状
+
+`request.prepare` 是**一次性 invoke→result**（不产生事件流），控制面与会话面同一个 `call` 形态进程。
+
+params：
+
+```json
+{
+  "request":  { /* chat.GenerateRequest 的业务视图，见 §4.2 */ },
+  "config":   { /* 该 hook 实例的插件专属配置 */ },
+  "hook_id":  "ec",
+  "chain":    { "index": 0, "total": 1 }
+}
+```
+
+result：
+
+```json
+{ "request": { /* 改写片段，只需带要改的字段 */ } }
+```
+
+- `result.request` 为 `null` 或缺席 → 不改写。
+- `ok=false` + `error` → **拒绝本次请求**，渠道 worker 不启动；`error.kind` 原样上抛给路由层按
+  `errkind` 分类（如 `prompt_too_long` / `content_blocked` / `bad_params` 属 request 级，
+  **不罚账号也不换号**；`auth` / `hard_credit` / `soft_rate` 这类才会触发换号与冷却）。
+- hook **不得**自行发终止事件，与 §3.4 同理（终止事件只能出现一次，W3-10）。
+
+```jsonl
+{"v":1,"id":"r1","op":"invoke","method":"request.prepare","params":{"request":{"model":"ds/deepseek-flash","messages":[{"role":"user","content":"你好"}]},"config":{},"hook_id":"ec","chain":{"index":0,"total":1}}}
+{"v":1,"id":"r1","op":"result","ok":true,"result":{"request":{"messages":[{"role":"system","content":"[EC_CONTEXT]…","name":"ec_management"},{"role":"user","content":"你好"}]}}}
+```
+
+实测教训：最早的实现把 `result.request` 当“完整改写后的请求”整包替换回去，而现实里的 hook
+（ec-hook Rust 侧）只回 `{messages, model}` 这类**部分**对象，结果 `account_uid`/`channel_config`
+被清空，渠道退回默认基址并**静默打到真实上游**。现在契约定为按字段采纳，不再依赖 hook “原样回传全部字段”。
+
+### 4.2 回写边界（安全，硬约束）
+
+**调度字段归 core 所有，prepare 通道既不下发也不采纳**：
+
+| 字段 | 下发给 hook | hook 回写后采纳 |
+|---|---|---|
+| `messages` | ✅ | ✅（为 `null` 视为不改写，防“空历史”静默成立） |
+| `tools` / `tool_choice` | ✅ | ✅（允许清空，`null` 即不带工具） |
+| `model` | ✅（只读，供分层决策） | ❌ |
+| `account_uid` `channel_config` `extra` | ❌ **从下发中剔离** | ❌ |
+| `conversation_id` 等会话/调度字段 | ❌ | ❌ |
+
+这与 W3-35 规则引擎的 `ruleOpaqueKeys` 是同一条边界：渠道配置里可能有明文 `api_key` 与内部基址，
+不得进入任何外部插件进程（AGENTS §9 零 token 落盘 / 插件不得绕过 core 调度）。
+hook 改写 `model` 也不采纳——路由结果（包括前缀反查与降级链）由 core 决定，
+否则 hook 能把一个渠道的凭据披到另一个模型上。
+
+### 4.3 时序与幂等
+
+- 链上**正向串行**：按 `order` 升序（同序按 `id`）逐层调用，下层看到上层的结果；
+  未声明 `request.prepare` 的层直接跳过。
+- 在**任何 `hook.stream` 进程 spawn 之前**、且在渠道 worker 之前完成，
+  因此 `hook.stream` 的 `params.request` 已是改写后的请求（§3.1）。
+- 它在 `route.try` 的**每一次 attempt** 都会执行（换号、模型降级都会重跑）。
+  因此 prepare **不得带外部副作用**（写文件、调上游、消耗额度）；
+  有压缩/持久化这类副作用的实现必须自己按 `request_id`/会话内容做幂等，
+  否则同一段历史会被压缩两次。
+- 失败策略沿用 §5：`fail_open=false`（默认）时任一 prepare 层失败即中断请求；
+  `fail_open=true` 时该层降级为“不改写”并记日志（但 `ok=false` 的**主动拒绝**在 fail_open 下也只是忽略）。
+
+---
+
+## 5. 失败策略
 
 配置项 `hooks[].fail_open`（默认 `false`）。
 
@@ -170,7 +245,7 @@ core 收到 `ok=false` 后统一构造终止事件发给下游：
 
 ---
 
-## 5. 配置（`<data>/config.json` 的 `core` 段，W3-35）
+## 6. 配置（`<data>/config.json` 的 `core` 段，W3-35）
 
 整个 ww3 只有一份 `config.json`（分 `gateway` / `core` / `rules` 三段），拦截器链在 `core.hooks`：
 
@@ -197,7 +272,7 @@ core 收到 `ok=false` 后统一构造终止事件发给下游：
 
 ---
 
-## 6. 控制面方法（可选但建议）
+## 7. 控制面方法（可选但建议）
 
 | 方法 | 说明 |
 |---|---|
@@ -209,7 +284,7 @@ core 收到 `ok=false` 后统一构造终止事件发给下游：
 
 ---
 
-## 7. 写一个拦截器的最小骨架
+## 8. 写一个拦截器的最小骨架
 
 ```go
 // internal/hook/hook.go
@@ -248,7 +323,7 @@ case "stdio":
 
 ---
 
-## 8. 样板：`loopguard-hook`
+## 9. 样板：`loopguard-hook`
 
 参考实现 `main/loopguard-hook/`（思考链死循环守卫）：
 
